@@ -7,6 +7,24 @@ import traceback
 import yaml
 
 
+def recvall(sock: socket.socket, nbytes):
+    """
+    Socket receive with no buffer size limit.
+
+    :param nbytes:
+    :param sock:
+    :return:
+    """
+    all_data = b''
+    buf_len = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+    while len(all_data) < nbytes:
+        current_data = sock.recv(min(nbytes-len(all_data), buf_len))
+        if current_data == b'':
+            return b''
+        all_data += current_data
+    return all_data
+
+
 def get_save_image_path(filename_prefix, output_dir):
     counter = 0
     while True:
@@ -32,13 +50,13 @@ class Client(threading.Thread):
     def run(self) -> None:
         while True:
             image_content_len, output_dir_len, filename_prefix_len = struct.unpack('iii', self.sock.recv(12))
-            output_dir = str(self.sock.recv(output_dir_len), encoding='utf-8')
-            filename_prefix = str(self.sock.recv(filename_prefix_len), encoding='utf-8')
+            output_dir = str(recvall(self.sock, output_dir_len), encoding='utf-8')
+            filename_prefix = str(recvall(self.sock, filename_prefix_len), encoding='utf-8')
             os.makedirs(output_dir, exist_ok=True)
             filepath = get_save_image_path(filename_prefix, output_dir)
             try:
                 with open(filepath, 'wb') as f:
-                    f.write(self.sock.recv(image_content_len))
+                    f.write(recvall(self.sock, image_content_len))
                     # mmap_file = mmap(f, 0, ACCESS_WRITE)
                     # image_content_len_recv = self.sock.recv_into(mmap_file, output_dir_len)
                     # assert image_content_len == image_content_len_recv

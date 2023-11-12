@@ -32,11 +32,16 @@ class Server(threading.Thread):
 
     def send_loop(self):
         while True:
-            output_dir, filename_prefix, img_content_bytes = self.q.get(block=True)
+            output_dir, filename_prefix, img_content_bytes, target = self.q.get(block=True)
             output_dir_bytes = bytes(output_dir, encoding='utf-8')
             filename_prefix_bytes = bytes(filename_prefix, encoding='utf-8')
+
             clean_up = []
-            for addr, item in self.client_sockets.items():
+            failed_addr = []
+
+            target = self.client_sockets.keys() if target is None else target
+            for addr in target:
+                item = self.client_sockets[addr]
                 conn, failed_retrial = item
                 try:
                     conn.sendall(
@@ -54,17 +59,22 @@ class Server(threading.Thread):
                     print('failed to send image to %s, retrial %d' % (str(addr), failed_retrial))
                     if failed_retrial < self.max_retrial:
                         item[1] += 1
-                        self.q.put((output_dir, filename_prefix, img_content_bytes), block=False)
+                        failed_addr.append(addr)
                     else:
                         print('shall remove %s' % str(addr))
                         clean_up.append(addr)
                     continue
                 item[1] = 0
+
+            if len(failed_addr) > 0:
+                self.q.put((output_dir, filename_prefix, img_content_bytes, failed_addr), block=False)
+
             for addr in clean_up:
                 self.client_sockets.pop(addr)
 
     def queue_image(self, output_dir, filename_prefix, img_content_bytes):
-        self.q.put((output_dir, filename_prefix, img_content_bytes), block=False)
+        # a copy of image will be sent to every connected client
+        self.q.put((output_dir, filename_prefix, img_content_bytes, None), block=False)
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
