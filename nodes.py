@@ -1,6 +1,5 @@
 import io
 import json
-
 import numpy as np
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -52,14 +51,6 @@ class RemoteSaveImage:
             img.save(stream, format='PNG', pnginfo=metadata, compress_level=4)
             self.server.queue_image(output_dir, filename_prefix, stream.getvalue())
         return {}
-        #     results.append({
-        #         "filename": file,
-        #         "subfolder": subfolder,
-        #         "type": self.type
-        #     })
-        #     counter += 1
-        #
-        # return { "ui": { "images": results } }
 
 
 NODE_CLASS_MAPPINGS = {

@@ -4,15 +4,22 @@ import threading
 import yaml
 import os
 import struct
+import traceback
 
 
 class Server(threading.Thread):
+    inst = None
+    initialized = False
+
     def __new__(cls, *args, **kwargs):
-        if not hasattr(cls, '_inst'):
-            cls._inst = super(Server, cls).__new__(cls, *args, **kwargs)
-        return cls._inst
+        if cls.inst is None:
+            cls.inst = super(Server, cls).__new__(cls, *args, **kwargs)
+        return cls.inst
 
     def __init__(self):
+        if self.initialized:
+            return
+        self.initialized = True
         super(Server, self).__init__()
         with open(os.path.join(os.path.dirname(__file__), 'config.yaml'), 'r') as f:
             config_dict = yaml.full_load(f)
@@ -26,23 +33,28 @@ class Server(threading.Thread):
     def send_loop(self):
         while True:
             output_dir, filename_prefix, img_content_bytes = self.q.get(block=True)
-            output_dir_bytes = bytes(output_dir)
-            filename_prefix_bytes = bytes(filename_prefix)
+            output_dir_bytes = bytes(output_dir, encoding='utf-8')
+            filename_prefix_bytes = bytes(filename_prefix, encoding='utf-8')
             clean_up = []
             for addr, item in self.client_sockets.items():
                 conn, failed_retrial = item
                 try:
                     conn.sendall(
-                        struct.pack('iii', (len(img_content_bytes), len(output_dir_bytes), len(filename_prefix_bytes)))
+                        struct.pack('iii', len(img_content_bytes), len(output_dir_bytes), len(filename_prefix_bytes))
                         + output_dir_bytes
                         + filename_prefix_bytes
                         + img_content_bytes
                     )
+                except ConnectionResetError:
+                    print('socket already closed from %s' % str(addr))
+                    clean_up.append(addr)
+                    continue
                 except Exception:
+                    traceback.print_exc()
                     print('failed to send image to %s, retrial %d' % (str(addr), failed_retrial))
                     if failed_retrial < self.max_retrial:
                         item[1] += 1
-                        self.q.put((output_dir, img_content_bytes, filename_prefix), block=False)
+                        self.q.put((output_dir, filename_prefix, img_content_bytes), block=False)
                     else:
                         print('shall remove %s' % str(addr))
                         clean_up.append(addr)
